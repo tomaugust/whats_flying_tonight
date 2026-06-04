@@ -1,0 +1,123 @@
+Development plan
+
+Goal
+- Modernize the Shiny app UI and user experience while preserving the existing location and data pipeline logic.
+- Keep the current grid-ref and species data functions intact initially, then refactor later behind a stable interface.
+
+Current state
+- The app is a working but dated mobile-style Shiny application.
+- Current UI uses an overlay/settings pattern with bottom buttons and large full-screen blocks.
+- The location flow is fragile: browser geolocation, manual place search, and error states are handled by text blocks.
+- The results layout is a left-floating card grid with poor mobile responsiveness.
+- Legacy dependencies are present: `jquery-2.1.4.js`, old lightbox JS/CSS, addtohomescreen library.
+- There are hard-coded paths, repeated reactive lookups, and `cat()` debug output in server logic.
+
+What to preserve
+- Keep the core value in the existing UK grid-ref conversion and species record selection.
+- Do not rewrite the data pipeline first.
+- Wrap old logic in a fresh interface so new behavior can be compared against the existing app.
+
+Design direction
+- Replace the floating overlay UI with a clean app shell.
+- Use a top header with the app name, resolved location, and date.
+- Use a collapsible filter/settings panel instead of a blocking overlay.
+- Show results as modern responsive cards or list items.
+- Present About/help in a modal or drawer.
+- Improve mobile responsiveness with a responsive grid:
+  - 1 column on phones
+  - 2 columns on tablets
+  - 3-4 columns on desktop
+- Keep settings accessible and sticky/collapsible, not covering the full screen.
+
+Location flow
+- Start with a clear location panel that offers:
+  - “Use my location”
+  - “Search for a place”
+- Show the resolved hectad subtly with the selected location.
+- Handle states explicitly with alerts or inline messages:
+  - permission denied
+  - outside UK
+  - unknown place
+  - loading while geocoding
+
+Results and interaction
+- Add local filters/search within results.
+- Add toggles for:
+  - show species without images
+  - sort by likelihood/common/scientific name
+  - number shown
+- Consider tabs like “Most likely tonight” and “All species”.
+- Make species cards more modern:
+  - thumbnail image
+  - common name
+  - scientific name
+  - record count badge
+  - phenology sparkline or chart
+  - link to UKMoths/details
+
+Dependencies and cleanup
+- Replace or remove legacy JS/CSS dependencies:
+  - remove `jquery-2.1.4.js` unless strictly required
+  - replace old lightbox with a maintained gallery solution or Shiny modal
+  - replace addtohomescreen with a modern PWA manifest/service worker if installability is needed
+- Move hard-coded file paths into a configuration object or helper.
+- Cache data loaded at startup and cache geocoding results.
+- Avoid repeated `speciesData_raw()` calls inside reactives.
+- Replace `cat()` debugging with `message()` or structured logging.
+
+Content updates
+- Fix mojibake text such as `todayƒ?Ts`.
+- Update the About text to reflect the current data and app status.
+- Add a clear data caveat: “previously recorded nearby at this time of year,” not a real-time forecast.
+- Add a proper README with:
+  - dependencies
+  - required ignored assets
+  - how to run locally
+  - data folder structure
+  - deployment notes
+
+Dependencies
+- Document required R packages explicitly, including:
+  - `shiny`
+  - `shinyjs`
+  - `sp`
+  - `RCurl`
+  - `RJSONIO`
+  - `plyr`
+  - `testthat`
+  - `shinytest2`
+
+Implementation path
+- Phase 1: Stabilize
+  - Fix text encoding and copy issues.
+  - Add or update dependency documentation.
+  - Add startup checks for required data files and assets.
+  - Keep the existing server/data behavior unchanged.
+- Phase 2: Modern UI refresh
+  - Rebuild the UI with a modern layout, ideally using `bslib` and Bootstrap 5.
+  - Keep server logic mostly unchanged while replacing the card layout and overlay behavior.
+  - Improve loading/error states and make the app responsive.
+- Phase 3: Refactor internals
+  - Modularize server logic into focused modules: location, species results, settings, about.
+  - Clean up geocoding/location conversion and caching.
+  - Add helper tests for data-loading and conversion functions.
+  - Consolidate configuration and remove legacy file paths.
+
+Acceptance checklist
+- Phase 1
+  - app starts with required data files available
+  - documentation exists for how to run locally
+  - no mojibake or stale text remains
+- Phase 2
+  - UI has a clean shell with header, filters, and results area
+  - mobile layout is responsive and usable
+  - location/error states use alerts/messages instead of full-page blocks
+- Phase 3
+  - logic is split into modules
+  - common helper code is tested
+  - repeated expensive reactive work is reduced
+
+Recommendation
+- Don’t rewrite the data pipeline first.
+- Use the existing app as a stable reference, then modernize the UI and interface.
+- Only after the UI and behavior are stable should the internals be refactored.
