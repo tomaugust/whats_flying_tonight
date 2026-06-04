@@ -167,6 +167,7 @@ a.about:active {
 
 #setting_button{
     position: fixed;
+    z-index: 2;
     bottom: 3px;
     margin: 2px;
     left: 3px;
@@ -174,6 +175,7 @@ a.about:active {
 
 #about_button{
     position: fixed;
+    z-index: 2;
     bottom: 3px;
     margin: 2px;
     right: 3px;

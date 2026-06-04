@@ -10,172 +10,18 @@ library(RCurl)
 library(RJSONIO)
 library(plyr)
 
-print(Sys.time())
+app_server <- function(input, output, session, app_data) {
+  GBR <- app_data$GBR
+  image_information <- app_data$image_information
+  speciesDataRaw <- app_data$speciesDataRaw
 
-source_scripts <- list.files('scripts/internal/', full.names = TRUE)
-for(i in source_scripts) source(i)
+  location <- location_server(input, output, session, GBR)
+  hectad <- location$hectad
+  location_man <- location$location_man
 
-# GBR <- raster::getData(country = 'GBR', level = 1)
-GBR <- readRDS('data/country_polygons/GBR.rds')
-
-# # load datasets
-# speciesDataRaw <- read.csv('data/UKMoths/spDatImages.csv', stringsAsFactors = FALSE)
-# # Add species URL
-# # Might be missing some species and therefore URLs
-image_information <- read.csv(file = 'data/UKMoths/images/Images_requested_with_filenames.csv',
-                              header = TRUE,
-                              stringsAsFactors = FALSE)
-additional_image_info <- read.csv(file = 'data/Additional images.csv',
-                                  header = TRUE,
-                                  stringsAsFactors = FALSE)
-image_information <- rbind(image_information, additional_image_info)
-
-# # Create this species URL object from the raw species images file
-# # save and load
-# sp_URLs <- tapply(image_information$UKMOTHSURL, image_information$BINOMIAL,
-#                   FUN = function(x) unique(dirname(x)))
-# speciesDataRaw$URL <- gsub('NA$',
-#                            '',
-#                            paste('http://ukmoths.org.uk',
-#                                  sp_URLs[as.character(speciesDataRaw$BINOMIAL)],
-#                                   sep = '')
-#                           )
-# save(speciesDataRaw, file = 'data/UKMoths/speciesData.rdata')
-
-load('data/UKMoths/speciesData_newNames2017.rdata')
-
-shinyServer(function(input, output, session) {
-
-  # Get hectad using location
-  hectad_loc <- reactive({
-    if(!is.null(input$lat)){
-      # lat <- 54.592104
-      # long <- -5.967430#ni
-      # long <- -1.967430#uk
-      # long <- -150.967430#notuk
-      
-      my_point <- SpatialPoints(coords = data.frame(input$long, input$lat),
-                                proj4string = CRS(proj4string(obj = GBR)))
-      country <- over(my_point, GBR)$NAME_1
-      
-      if(identical(country, 'Northern Ireland')){ # NI
-        gr <- gps_latlon2gr(latitude = input$lat, longitude = input$long, out_projection = 'OSNI')
-        return(reformat_gr(gr$GRIDREF, prec_out = 10000))
-      } else if(is.na(country)){ # Outside UK
-        return('notuk')
-      } else { # GB
-        gr <- gps_latlon2gr(latitude = input$lat, longitude = input$long, out_projection = 'OSGB')
-        return(reformat_gr(gr$GRIDREF, prec_out = 10000))
-      }
-    }
-  }) 
-  
-  observe({
-    if(!is.null(input$lat)){
-      cat(paste('lat:', input$lat))
-      cat(paste('\nlong:', input$long))
-    }
-  })
-  
-  # read in the google location when the button is pressed
-  location_man <- eventReactive(input$submit, {
-    return(input$location_man)
-  })
-  
-  GCode <- reactive ({
-    textLocation <- location_man()
-    cat('\n', textLocation, '\n')
-    str(textLocation)
-    GCode <- geoCode(paste0(as.character(textLocation), ', UK'))
-    return(GCode)
-  })
-  
-  output$googlelocation <- renderText({
-    cat('\n', GCode()[4], '\n')
-    if(is.na(GCode()[4])){
-      return('Location unknown')
-    } else {
-      return(GCode()[4])
-    }
-  })
-
-  # Select hectad to use
-  hectad <- reactive({
-    if(input$skip_load > 0 & input$submit == 0){
-      return('skip')
-    } else if(!is.null(input$lat) & input$submit == 0){
-      hectad_loc()
-    } else if(location_man() != ''){
-      
-      GCode_progress <- shiny::Progress$new()
-      # Make sure it closes when we exit this reactive, even if there's an error
-      on.exit(GCode_progress$close())
-      
-      GCode_progress$set(message = "Resolving location", value = 0.2)
-      
-      GCode <- GCode()
-      
-      if(any(is.na(GCode[1:2]))){ # error message like no data
-        
-        return(NULL)
-        
-      }
-      
-      lat <- as.numeric(GCode[1])
-      long <- as.numeric(GCode[2])
-      
-      cat(lat,long) # without this cat the next line fails
-      # I HAVE NO IDEA WHY!
-      
-      my_point <- SpatialPoints(coords = data.frame(long, lat),
-                                proj4string = CRS(proj4string(obj = GBR)))
-      country <- over(my_point, GBR)$NAME_1
-      
-      if(identical(country, 'Northern Ireland')){ # NI
-        gr <- gps_latlon2gr(latitude = lat, longitude = long, out_projection = 'OSNI')
-        return(reformat_gr(gr$GRIDREF, prec_out = 10000))
-      } else if(is.na(country)){ # Outside UK
-        return('notuk')
-      } else { # GB
-        gr <- gps_latlon2gr(latitude = lat, longitude = long, out_projection = 'OSGB')
-        return(reformat_gr(gr$GRIDREF, prec_out = 10000))
-      }
-      
-      GCode_progress$set(message = "Resolving location", value = 1)
-      
-      # input$hectad_man
-    } else {
-      return(NULL)
-    }
-  })
-  
-  # If geolocation is not give this is displayed
-  # and the loading text is hidden
-  observe({
-    if(!is.null(input$geolocation) & is.null(input$lat)){
-      cat(paste('Geo:', input$geolocation))
-      if(!input$geolocation & input$submit == 0){
-        shinyjs::hide('loading', anim = FALSE)
-        shinyjs::show(id = 'geolocation_denied', anim = TRUE, animType = 'fade')
-      } else if(!input$geolocation & location_man() != ''){
-        shinyjs::hide(id = 'geolocation_denied', anim = TRUE, animType = 'fade')
-      }
-    } 
-  })
-  
-  dayMonth <- reactive({
-    if(!input$use_date){
-      format(Sys.time(), '%d-%b')
-    } else if(input$use_date){
-      paste(input$day_man,
-            input$month_man,
-            sep = '-')
-    }
-  })
-  
-  jDay <- reactive({
-    as.POSIXlt(as.Date(dayMonth(), '%d-%b'))$yday
-  })
+  settings <- settings_server(input, output, session)
+  dayMonth <- settings$dayMonth
+  jDay <- settings$jDay
   
   # Gather the data
   speciesData_raw <- reactive({
@@ -488,18 +334,6 @@ shinyServer(function(input, output, session) {
     
   })
   
-  # output species divs
-  output$day_selector <- renderUI({
-    # tagList(
-      selectInput('day_man',
-                  label = NULL,
-                  selected = as.numeric(format(Sys.Date(), '%d')),
-                  1:monthsdays(input$month_man),
-                  selectize = TRUE,
-                  multiple = FALSE, width = '60px')    
-    # )
-  })
-  
   # Loading div
   observe({
     if(!is.null(divList())){
@@ -512,66 +346,6 @@ shinyServer(function(input, output, session) {
   ## Settings and About boxes ###
   ###############################
   
-  outputOptions(output, 'day_selector', suspendWhenHidden=FALSE)
+  about_server(input, output, session)
   
-  # Settings button
-  observeEvent(input$setting_button,
-                {
-                  shinyjs::show(id = 'settings_display', anim = TRUE,
-                                animType = 'fade', time = 0.2)
-                  shinyjs::show(id = 'settings_exit',  anim = TRUE,
-                                animType = 'fade', time = 0.2)
-                  shinyjs::hide(id = 'about_button', anim = TRUE,
-                                animType = 'fade', time = 0.2)
-                  shinyjs::hide(id = 'about_display', anim = TRUE,
-                                animType = 'fade', time = 0.2)
-                })
-  
-  # Settings close button
-  observeEvent(input$settings_exit,
-                {
-                  shinyjs::hide(id = 'about_display', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::hide(id = 'settings_display', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::hide(id = 'settings_exit',  anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::hide(id = 'about_exit',  anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::show(id = 'about_button', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::show(id = 'setting_button', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                })
-  
-  # About button
-  observeEvent(input$about_button,
-                {
-                  shinyjs::hide(id = 'settings_display', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::show(id = 'about_exit',  anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::show(id = 'about_display',  anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::hide(id = 'setting_button', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                })
-  
-  # # About close button
-  observeEvent(input$about_exit,
-                {
-                  shinyjs::hide(id = 'about_display', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::hide(id = 'settings_display', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::hide(id = 'settings_exit',  anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::hide(id = 'about_exit',  anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::show(id = 'about_button', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                  shinyjs::show(id = 'setting_button', anim = TRUE,
-                       animType = 'fade', time = 0.2)
-                })
-
-})
+}
